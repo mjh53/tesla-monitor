@@ -40,7 +40,7 @@ extern "C" {
 os_timer_t myTimer;
 
 
-// Use web browser to view and copy
+// Use web browser to connect to tesla gateway, view and copy
 // SHA1 fingerprint of the certificate
 const char fingerprint[] PROGMEM = "9a a6 da e5 b9 c0 3c 02 d5 aa 31 68 66 74 f3 39 f7 6b 91 08";
 
