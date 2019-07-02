@@ -53,9 +53,6 @@ int called=0;
 void timerCallback(void *pArg) {
   called=1;
   os_intr_lock(); 
-  // cycle up
-
-  power-=20;
   
   if (power > 0) {
       mask = mask << 1;
