@@ -44,23 +44,26 @@ os_timer_t myTimer;
 // SHA1 fingerprint of the certificate
 const char fingerprint[] PROGMEM = "9a a6 da e5 b9 c0 3c 02 d5 aa 31 68 66 74 f3 39 f7 6b 91 08";
 
-int power;
-int displayBits=B1010101;
+int power=00;
+int displayBits=1023;
 int mask=1;
 int frequency=400;
+int baseFrequency=400;
 int called=0;
 // start of timerCallback
 void timerCallback(void *pArg) {
-  called=1;
   os_intr_lock(); 
   
-  if (power > 0) {
+  if (power < 0) {
+      if (mask > displayBits) { mask=0; } 
       mask = mask << 1;
       mask += 1;
-      if (mask > 1023) { mask=0; } 
   }
-  if (power < 0) {
+  if (power > 0) {
       if (mask < 1) { mask=displayBits; } else { mask = mask >> 1; }
+  }
+  if (power == 0) {
+    mask=B11111111+(B11111111<<8);
   }
 
   bar_display(displayBits & mask);
@@ -72,7 +75,7 @@ void setup() {
 
   os_timer_setfn(&myTimer, timerCallback, NULL);
   os_timer_arm(&myTimer, frequency, true);
-
+  
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // initialize with the I2C addr 0x3C (for the 64x48)
   // Clear the buffer.
   display.clearDisplay();
@@ -106,18 +109,23 @@ void setup() {
 }
 
 void bar_display(int numberToDisplay) {
-  int blank=2048;
+  int blank=256;
   digitalWrite(latchPin, LOW);
+  //shiftOut(dataPin, clockPin, LSBFIRST, blank);
+  //shiftOut(dataPin, clockPin, LSBFIRST, blank);
+
   // shift out the bits:
-  shiftOut(dataPin, clockPin, LSBFIRST, blank);
-  shiftOut(dataPin, clockPin, LSBFIRST, numberToDisplay);  
+  int n=numberToDisplay;
+  shiftOut(dataPin, clockPin, LSBFIRST, n>>8);  
+  shiftOut(dataPin, clockPin, LSBFIRST, n);  
+
 
   //take the latch pin high so the LEDs will light up:
   digitalWrite(latchPin, HIGH);
  
 }
 
-void loop() {
+String get_charge() {
   
   // Use WiFiClientSecure class to create TLS connection
   WiFiClientSecure client;
@@ -129,7 +137,7 @@ void loop() {
 
   if (!client.connect(host, httpsPort)) {
     Serial.println("connection failed");
-    return;
+    return "";
   }
 
   String url = "/api/system_status/soe";
@@ -156,16 +164,18 @@ void loop() {
     Serial.println("Charge read has failed");
   }
   String percentstr=line.substring(14,19);
-  Serial.println(percentstr);
-  int percent=percentstr.substring(0,2).toInt();
-  Serial.println(percent);
-  Serial.println("reply was:");
-  Serial.println("==========");
-  Serial.println(line);
-  Serial.println("==========");
-  Serial.println("closing connection");
-  client.stop();
+  Serial.print("Charge: ");Serial.println(percentstr);
 
+  //Serial.println("reply was:");
+  //Serial.println("==========");
+  //Serial.println(line);
+  //Serial.println("==========");
+  //Serial.println("closing connection");
+  client.stop();
+  return percentstr;
+}
+
+int get_power() {
   Serial.print("connecting to ");
   Serial.println(host);
 
@@ -176,9 +186,9 @@ void loop() {
 
   if (!client2.connect(host, httpsPort)) {
     Serial.println("connection failed");
-    return;
+    return 0;
   }
-  url = "/api/meters/aggregates";
+  String url = "/api/meters/aggregates";
   Serial.print("requesting URL: ");
   Serial.println(url);
 
@@ -217,16 +227,23 @@ void loop() {
   }
 
   String powerstr=doc["battery"]["instant_power"];
-  int power=powerstr.toInt();
-  Serial.println("power read:");
+  power=powerstr.toInt();
+  Serial.print("power read:");
   Serial.println(powerstr);
+  return power;
+}
 
-
+void loop() {
   display.clearDisplay();
   display.setCursor(0,0);
   display.setTextSize(2);
   display.println("Tesla");
   display.setTextSize(1);
+
+  power=get_power();
+  String percentstr=get_charge();
+  int percent=percentstr.substring(0,2).toInt();
+  
   if (power < 0) {
     display.println("charging");
   } else {
@@ -253,6 +270,16 @@ void loop() {
 
   int blank=2048;
   displayBits=numberToDisplay;
+  Serial.write("bits: "); Serial.println(displayBits,BIN);
+  frequency = baseFrequency - sqrt(sq(power))/10;
+  if (frequency<50) { frequency=50; }
+  Serial.print("frequency: "); Serial.println(frequency);
+
+  //os_timer_disarm(&myTimer);
+  //os_timer_setfn(&myTimer, timerCallback, NULL);
+
+  os_timer_arm(&myTimer, frequency, true);
+
 
   yield();
  
